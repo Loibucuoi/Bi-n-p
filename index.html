@@ -1,0 +1,1329 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mô Phỏng 3D Nguyên Lý Máy Biến Áp</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <!-- Three.js & OrbitControls CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            background: radial-gradient(circle at 40% 50%, #1e293b 0%, #0b1120 100%);
+            color: #f8fafc;
+            user-select: none;
+        }
+
+        .font-mono-tech {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Custom Scrollbar cho bảng điều khiển */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.4);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.3);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(148, 163, 184, 0.5);
+        }
+
+        /* Custom Range Slider */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: rgba(51, 65, 85, 0.8);
+            height: 6px;
+            border-radius: 999px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #38bdf8;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+            transition: transform 0.15s ease;
+        }
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        input[type="range"].accent-orange::-webkit-slider-thumb {
+            background: #f97316;
+            box-shadow: 0 0 10px rgba(249, 115, 22, 0.6);
+        }
+        input[type="range"].accent-teal::-webkit-slider-thumb {
+            background: #14b8a6;
+            box-shadow: 0 0 10px rgba(20, 184, 166, 0.6);
+        }
+
+        /* 3D Floating Labels */
+        .label-3d {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(6px);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            padding: 4px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            white-space: nowrap;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+            transition: opacity 0.2s ease;
+            z-index: 10;
+        }
+        .label-3d::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 5px 5px 0;
+            border-style: solid;
+            border-color: rgba(15, 23, 42, 0.82) transparent transparent transparent;
+        }
+
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.82);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(148, 163, 184, 0.2);
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.55);
+            transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.2s ease;
+        }
+
+        .panel-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            color: #cbd5e1;
+            transition: all 0.15s ease;
+            cursor: pointer;
+        }
+        .panel-btn:hover {
+            background: rgba(51, 65, 85, 0.95);
+            color: #ffffff;
+            border-color: rgba(56, 189, 248, 0.45);
+        }
+    </style>
+</head>
+<body class="w-screen h-screen relative overflow-hidden">
+
+    <!-- Canvas 3D Chính -->
+    <div id="canvas-container" class="absolute inset-0 w-full h-full z-0"></div>
+
+    <!-- Lớp chứa nhãn 3D nổi -->
+    <div id="labels-container" class="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+        <div id="lbl-core" class="label-3d text-sky-300 border-sky-500/40">Lõi sắt dẫn từ</div>
+        <div id="lbl-primary" class="label-3d text-orange-400 border-orange-500/40">Cuộn sơ cấp (N₁ = <span id="lbl-n1">10</span>)</div>
+        <div id="lbl-secondary" class="label-3d text-teal-300 border-teal-500/40">Cuộn thứ cấp (N₂ = <span id="lbl-n2">20</span>)</div>
+        <div id="lbl-flux" class="label-3d text-blue-300 border-blue-400/40">Từ thông biến thiên (Φ)</div>
+        <div id="lbl-u2-out" class="label-3d text-emerald-300 border-emerald-500/40 font-mono-tech">U₂ = <span id="lbl-u2-val">220</span> V</div>
+    </div>
+
+    <!-- Thanh công cụ nổi nhanh ở giữa trên cùng (Ẩn/Hiện toàn bộ bảng UI) -->
+    <div class="fixed top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 glass-panel px-2.5 py-1.5 rounded-full">
+        <button id="btn-toggle-all-ui" class="flex items-center gap-1.5 text-xs font-semibold text-slate-200 hover:text-sky-300 px-2 py-0.5 cursor-pointer transition" title="Ẩn hoặc hiện toàn bộ các bảng điều khiển">
+            <svg id="icon-eye-open" class="w-3.5 h-3.5 text-sky-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
+            <svg id="icon-eye-closed" class="w-3.5 h-3.5 text-amber-400 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"></path></svg>
+            <span id="txt-toggle-all-ui">Ẩn bảng UI</span>
+        </button>
+        <span class="h-3.5 w-[1px] bg-slate-700"></span>
+        <button id="btn-reset-cam" class="flex items-center gap-1 text-xs font-medium text-slate-300 hover:text-white px-2 py-0.5 cursor-pointer transition" title="Đặt lại góc nhìn 3D ban đầu">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+            <span>Góc 360°</span>
+        </button>
+    </div>
+
+    <!-- BẢNG 1 (BÊN TRÁI): ĐIỀU KHIỂN NGUỒN & THÔNG SỐ KỸ THUẬT -->
+    <div id="left-panel-wrapper" class="ui-panel-wrapper fixed top-14 sm:top-4 left-3 sm:left-4 z-20 w-[300px] sm:w-80 max-w-[calc(100vw-1.5rem)] pointer-events-none" style="transform-origin: top left;">
+        <div class="glass-panel rounded-2xl overflow-hidden pointer-events-auto flex flex-col max-h-[calc(100vh-4.5rem)] sm:max-h-[calc(100vh-2rem)]">
+            
+            <!-- Thanh Tiêu Đề Bảng Trái (Có nút Thu nhỏ / Phóng to / Thu gọn) -->
+            <div class="flex items-center justify-between px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-700/70 select-none">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-2 h-2 rounded-full bg-orange-400 shrink-0"></span>
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-200 truncate">Bảng Điều Khiển</span>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button id="left-zoom-out" class="panel-btn w-6 h-6 text-[11px] font-bold" title="Thu nhỏ kích thước bảng">A-</button>
+                    <span id="left-zoom-label" class="text-[10px] font-mono-tech text-slate-400 w-8 text-center">100%</span>
+                    <button id="left-zoom-in" class="panel-btn w-6 h-6 text-[11px] font-bold" title="Phóng to kích thước bảng">A+</button>
+                    <button id="left-collapse-btn" class="panel-btn w-6 h-6 ml-0.5" title="Thu gọn / Mở rộng bảng">
+                        <svg id="left-collapse-icon" class="w-3.5 h-3.5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Nội dung Bảng Trái -->
+            <div id="left-panel-body" class="p-3.5 overflow-y-auto flex flex-col gap-3.5">
+                
+                <!-- 1. Công tắc nguồn & Loại dòng điện -->
+                <div>
+                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">1. Nguồn điện & Đóng/Ngắt mạch</div>
+                    
+                    <!-- Nút Công Tắc Lớn -->
+                    <button id="btn-power-switch" class="w-full py-2.5 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-between transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/40 border border-emerald-400/40">
+                        <span class="flex items-center gap-2">
+                            <span id="power-indicator" class="w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_#fff]"></span>
+                            <span id="power-text">MẠCH ĐANG ĐÓNG (CÓ ĐIỆN)</span>
+                        </span>
+                        <span class="text-[11px] bg-black/25 px-2 py-0.5 rounded font-mono-tech">ON</span>
+                    </button>
+
+                    <!-- Chọn AC / DC -->
+                    <div class="grid grid-cols-2 gap-2 mt-2 bg-slate-900/80 p-1 rounded-xl border border-slate-700/70">
+                        <button id="btn-mode-ac" class="py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-sky-600 text-white shadow">
+                            Xoay chiều (AC)
+                        </button>
+                        <button id="btn-mode-dc" class="py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-slate-400 hover:text-white">
+                            Một chiều (DC)
+                        </button>
+                    </div>
+                </div>
+
+                <hr class="border-slate-700/60">
+
+                <!-- 2. Điều chỉnh thông số dòng điện & cuộn dây -->
+                <div class="flex flex-col gap-3">
+                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">2. Thông số kỹ thuật</div>
+
+                    <!-- Điện áp U1 -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300 font-medium">Điện áp sơ cấp (U₁)</span>
+                            <span class="font-mono-tech font-bold text-orange-400"><span id="val-u1">110</span> V</span>
+                        </div>
+                        <input type="range" id="slider-u1" min="0" max="240" step="5" value="110" class="w-full accent-orange">
+                    </div>
+
+                    <!-- Tần số f -->
+                    <div id="freq-control-group">
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300 font-medium">Tần số biến thiên (f)</span>
+                            <span class="font-mono-tech font-bold text-sky-400"><span id="val-freq">0.8</span> Hz</span>
+                        </div>
+                        <input type="range" id="slider-freq" min="0.2" max="2.5" step="0.1" value="0.8" class="w-full">
+                    </div>
+
+                    <!-- Số vòng cuộn sơ cấp N1 -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300 font-medium">Số vòng sơ cấp (N₁)</span>
+                            <span class="font-mono-tech font-bold text-orange-400"><span id="val-n1">10</span> vòng</span>
+                        </div>
+                        <input type="range" id="slider-n1" min="5" max="30" step="1" value="10" class="w-full accent-orange">
+                    </div>
+
+                    <!-- Số vòng cuộn thứ cấp N2 -->
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300 font-medium">Số vòng thứ cấp (N₂)</span>
+                            <span class="font-mono-tech font-bold text-teal-400"><span id="val-n2">20</span> vòng</span>
+                        </div>
+                        <input type="range" id="slider-n2" min="5" max="30" step="1" value="20" class="w-full accent-teal">
+                    </div>
+                </div>
+
+                <hr class="border-slate-700/60">
+
+                <!-- 3. Lớp hiển thị trực quan -->
+                <div class="flex flex-col gap-1.5">
+                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">3. Hiệu ứng trường & Hạt</div>
+                    
+                    <label class="flex items-center justify-between text-xs text-slate-200 cursor-pointer bg-slate-900/50 hover:bg-slate-800/70 px-2.5 py-1.5 rounded-xl border border-slate-700/50 transition">
+                        <span class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_8px_#60a5fa]"></span>
+                            Từ thông trong lõi sắt (Φ)
+                        </span>
+                        <input type="checkbox" id="chk-flux" checked class="w-3.5 h-3.5 accent-sky-500 rounded cursor-pointer">
+                    </label>
+
+                    <label class="flex items-center justify-between text-xs text-slate-200 cursor-pointer bg-slate-900/50 hover:bg-slate-800/70 px-2.5 py-1.5 rounded-xl border border-slate-700/50 transition">
+                        <span class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-fuchsia-400 shadow-[0_0_8px_#e879f9]"></span>
+                            Điện trường xoáy xung quanh
+                        </span>
+                        <input type="checkbox" id="chk-efield" checked class="w-3.5 h-3.5 accent-fuchsia-500 rounded cursor-pointer">
+                    </label>
+
+                    <label class="flex items-center justify-between text-xs text-slate-200 cursor-pointer bg-slate-900/50 hover:bg-slate-800/70 px-2.5 py-1.5 rounded-xl border border-slate-700/50 transition">
+                        <span class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-amber-300 shadow-[0_0_8px_#fcd34d]"></span>
+                            Hạt dòng điện trong dây dẫn
+                        </span>
+                        <input type="checkbox" id="chk-electrons" checked class="w-3.5 h-3.5 accent-amber-500 rounded cursor-pointer">
+                    </label>
+
+                    <label class="flex items-center justify-between text-xs text-slate-200 cursor-pointer bg-slate-900/50 hover:bg-slate-800/70 px-2.5 py-1.5 rounded-xl border border-slate-700/50 transition">
+                        <span class="flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-slate-300"></span>
+                            Nhãn chú thích 3D
+                        </span>
+                        <input type="checkbox" id="chk-labels" checked class="w-3.5 h-3.5 accent-sky-500 rounded cursor-pointer">
+                    </label>
+                </div>
+
+                <!-- Hướng dẫn chuột dưới cùng -->
+                <div class="pt-1.5 text-[11px] text-slate-400 bg-slate-950/60 p-2 rounded-xl border border-slate-800/80 leading-relaxed">
+                    <strong class="text-slate-300">Thao tác 3D:</strong> Kéo chuột / vuốt để xoay 360° • Cuộn / chụm 2 ngón để thu phóng.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BẢNG 2 (BÊN PHẢI): THÔNG SỐ GIÁ TRỊ & DAO ĐỘNG KÝ -->
+    <div id="right-panel-wrapper" class="ui-panel-wrapper fixed bottom-3 sm:bottom-auto sm:top-4 right-3 sm:right-4 z-20 w-[310px] sm:w-[340px] max-w-[calc(100vw-1.5rem)] pointer-events-none" style="transform-origin: top right;">
+        <div class="glass-panel rounded-2xl overflow-hidden pointer-events-auto flex flex-col">
+            
+            <!-- Thanh Tiêu Đề Bảng Phải (Có nút Thu nhỏ / Phóng to / Thu gọn) -->
+            <div class="flex items-center justify-between px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-700/70 select-none">
+                <div class="flex items-center gap-2 min-w-0">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-200 truncate">Giá Trị & Dao Động Ký</span>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button id="right-zoom-out" class="panel-btn w-6 h-6 text-[11px] font-bold" title="Thu nhỏ kích thước bảng">A-</button>
+                    <span id="right-zoom-label" class="text-[10px] font-mono-tech text-slate-400 w-8 text-center">100%</span>
+                    <button id="right-zoom-in" class="panel-btn w-6 h-6 text-[11px] font-bold" title="Phóng to kích thước bảng">A+</button>
+                    <button id="right-collapse-btn" class="panel-btn w-6 h-6 ml-0.5" title="Thu gọn / Mở rộng bảng">
+                        <svg id="right-collapse-icon" class="w-3.5 h-3.5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Nội dung Bảng Phải -->
+            <div id="right-panel-body" class="p-3.5 flex flex-col gap-3">
+                
+                <!-- Phân loại máy & Công thức tỷ lệ -->
+                <div class="flex items-center justify-between gap-2">
+                    <span id="transformer-mode-badge" class="px-2.5 py-1 text-[11px] font-bold bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/30">
+                        Máy tăng áp
+                    </span>
+                    <div class="font-mono-tech text-xs bg-slate-900/80 px-2.5 py-1 rounded-lg border border-slate-700/80 text-slate-200">
+                        <span class="text-teal-400">U₂</span>/<span class="text-orange-400">U₁</span> = <span class="text-teal-400">N₂</span>/<span class="text-orange-400">N₁</span> = <span id="ratio-val" class="text-white font-bold">2.00</span>
+                    </div>
+                </div>
+
+                <!-- Chỉ số tức thời & hiệu dụng -->
+                <div class="grid grid-cols-3 gap-2 text-center">
+                    <div class="bg-slate-900/75 rounded-xl p-2 border border-orange-500/25">
+                        <div class="text-[10px] text-slate-400 uppercase">Sơ cấp U₁</div>
+                        <div class="font-mono-tech text-sm font-bold text-orange-400 mt-0.5"><span id="readout-u1">110</span> V</div>
+                        <div class="font-mono-tech text-[10px] text-slate-400">tức thời: <span id="inst-u1">0</span>V</div>
+                    </div>
+                    <div class="bg-slate-900/75 rounded-xl p-2 border border-blue-500/25">
+                        <div class="text-[10px] text-slate-400 uppercase">Từ thông Φ</div>
+                        <div class="font-mono-tech text-sm font-bold text-blue-400 mt-0.5"><span id="readout-flux">100</span>%</div>
+                        <div class="font-mono-tech text-[10px] text-slate-400 truncate" id="flux-dir-text">Đang biến thiên</div>
+                    </div>
+                    <div class="bg-slate-900/75 rounded-xl p-2 border border-teal-500/25">
+                        <div class="text-[10px] text-slate-400 uppercase">Thứ cấp U₂</div>
+                        <div class="font-mono-tech text-sm font-bold text-teal-400 mt-0.5"><span id="readout-u2">220</span> V</div>
+                        <div class="font-mono-tech text-[10px] text-slate-400">tức thời: <span id="inst-u2">0</span>V</div>
+                    </div>
+                </div>
+
+                <!-- Dao động ký thời gian thực -->
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <span class="text-[11px] font-semibold text-slate-300">Đồ thị điện áp theo thời gian</span>
+                        <div class="flex items-center gap-3 text-[11px] font-medium">
+                            <span class="flex items-center gap-1 text-orange-400"><span class="w-2.5 h-0.5 bg-orange-400 inline-block"></span> U₁(t)</span>
+                            <span class="flex items-center gap-1 text-teal-400"><span class="w-2.5 h-0.5 bg-teal-400 inline-block"></span> U₂(t)</span>
+                        </div>
+                    </div>
+
+                    <!-- Canvas Đồ thị sóng -->
+                    <div class="relative w-full h-24 sm:h-28 bg-slate-950/90 rounded-xl border border-slate-800 overflow-hidden">
+                        <canvas id="oscilloscope-canvas" class="w-full h-full block"></canvas>
+                    </div>
+                </div>
+
+                <!-- Thông báo trạng thái DC / Ngắt mạch -->
+                <div id="physics-alert" class="text-[11px] px-3 py-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 hidden leading-snug">
+                    <!-- Nội dung cập nhật động bằng JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. TRẠNG THÁI VẬT LÝ & CẤU HÌNH MÔ PHỎNG
+        // ==========================================
+        const state = {
+            powerOn: true,
+            mode: 'AC', // 'AC' hoặc 'DC'
+            u1: 110,
+            freq: 0.8,
+            n1: 10,
+            n2: 20,
+            showFlux: true,
+            showEField: true,
+            showElectrons: true,
+            showLabels: true,
+            phase: 0,
+            dcFluxLevel: 0, // Dùng cho quá độ bật/tắt nguồn DC
+            lastTime: performance.now(),
+            waveHistoryU1: new Array(160).fill(0),
+            waveHistoryU2: new Array(160).fill(0)
+        };
+
+        // ==========================================
+        // 2. KHỞI TẠO CẢNH 3D (THREE.JS)
+        // ==========================================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
+        const defaultCamPos = new THREE.Vector3(0, 2.2, 11.5);
+        camera.position.copy(defaultCamPos);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.2;
+        container.appendChild(renderer.domElement);
+
+        // Điều khiển xoay 360 độ mượt mà
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.minDistance = 5;
+        controls.maxDistance = 22;
+
+        // Hệ thống ánh sáng studio
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+        scene.add(ambientLight);
+
+        const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.1);
+        dirLight1.position.set(6, 10, 8);
+        scene.add(dirLight1);
+
+        const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.55);
+        dirLight2.position.set(-8, -5, -6);
+        scene.add(dirLight2);
+
+        // Nhóm chứa toàn bộ mô hình máy biến áp
+        const transformerGroup = new THREE.Group();
+        scene.add(transformerGroup);
+
+        // ==========================================
+        // 3. DỰNG LÕI SẮT CHỮ NHẬT BO GÓC BÁN TRONG SUỐT
+        // ==========================================
+        const coreW = 4.6;
+        const coreH = 3.6;
+        const coreThick = 0.72;
+        const coreDepth = 0.85;
+        const cornerR = 0.35;
+
+        function createRoundedRectPath(w, h, r) {
+            const path = new THREE.CurvePath();
+            const hw = w / 2;
+            const hh = h / 2;
+
+            // Cạnh trên (trái -> phải)
+            path.add(new THREE.LineCurve3(new THREE.Vector3(-hw + r, hh, 0), new THREE.Vector3(hw - r, hh, 0)));
+            // Góc trên phải
+            path.add(new THREE.QuadraticBezierCurve3(
+                new THREE.Vector3(hw - r, hh, 0),
+                new THREE.Vector3(hw, hh, 0),
+                new THREE.Vector3(hw, hh - r, 0)
+            ));
+            // Cạnh phải (trên -> dưới)
+            path.add(new THREE.LineCurve3(new THREE.Vector3(hw, hh - r, 0), new THREE.Vector3(hw, -hh + r, 0)));
+            // Góc dưới phải
+            path.add(new THREE.QuadraticBezierCurve3(
+                new THREE.Vector3(hw, -hh + r, 0),
+                new THREE.Vector3(hw, -hh, 0),
+                new THREE.Vector3(hw - r, -hh, 0)
+            ));
+            // Cạnh dưới (phải -> trái)
+            path.add(new THREE.LineCurve3(new THREE.Vector3(hw - r, -hh, 0), new THREE.Vector3(-hw + r, -hh, 0)));
+            // Góc dưới trái
+            path.add(new THREE.QuadraticBezierCurve3(
+                new THREE.Vector3(-hw + r, -hh, 0),
+                new THREE.Vector3(-hw, -hh, 0),
+                new THREE.Vector3(-hw, -hh + r, 0)
+            ));
+            // Cạnh trái (dưới -> trên)
+            path.add(new THREE.LineCurve3(new THREE.Vector3(-hw, -hh + r, 0), new THREE.Vector3(-hw, hh - r, 0)));
+            // Góc trên trái
+            path.add(new THREE.QuadraticBezierCurve3(
+                new THREE.Vector3(-hw, hh - r, 0),
+                new THREE.Vector3(-hw, hh, 0),
+                new THREE.Vector3(-hw + r, hh, 0)
+            ));
+
+            return path;
+        }
+
+        // Tạo hình học lõi sắt bằng ExtrudeGeometry có lỗ rỗng ở giữa
+        function buildIronCore() {
+            const outerShape = new THREE.Shape();
+            const ow = (coreW + coreThick) / 2;
+            const oh = (coreH + coreThick) / 2;
+            const or = 0.45;
+
+            outerShape.moveTo(-ow + or, oh);
+            outerShape.lineTo(ow - or, oh);
+            outerShape.quadraticCurveTo(ow, oh, ow, oh - or);
+            outerShape.lineTo(ow, -oh + or);
+            outerShape.quadraticCurveTo(ow, -oh, ow - or, -oh);
+            outerShape.lineTo(-ow + or, -oh);
+            outerShape.quadraticCurveTo(-ow, -oh, -ow, -oh + or);
+            outerShape.lineTo(-ow, oh - or);
+            outerShape.quadraticCurveTo(-ow, oh, -ow + or, oh);
+
+            const holePath = new THREE.Path();
+            const iw = (coreW - coreThick) / 2;
+            const ih = (coreH - coreThick) / 2;
+            const ir = 0.2;
+
+            holePath.moveTo(-iw + ir, ih);
+            holePath.lineTo(iw - ir, ih);
+            holePath.quadraticCurveTo(iw, ih, iw, ih - ir);
+            holePath.lineTo(iw, -ih + ir);
+            holePath.quadraticCurveTo(iw, -ih, iw - ir, -ih);
+            holePath.lineTo(-iw + ir, -ih);
+            holePath.quadraticCurveTo(-iw, -ih, -iw, -ih + ir);
+            holePath.lineTo(-iw, ih - ir);
+            holePath.quadraticCurveTo(-iw, ih, -iw + ir, ih);
+
+            outerShape.holes.push(holePath);
+
+            const extrudeSettings = {
+                depth: coreDepth,
+                bevelEnabled: true,
+                bevelSegments: 4,
+                steps: 1,
+                bevelSize: 0.04,
+                bevelThickness: 0.04
+            };
+
+            const geo = new THREE.ExtrudeGeometry(outerShape, extrudeSettings);
+            geo.center();
+
+            const mat = new THREE.MeshPhysicalMaterial({
+                color: 0x64748b,
+                metalness: 0.55,
+                roughness: 0.2,
+                transparent: true,
+                opacity: 0.34,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+
+            const coreMesh = new THREE.Mesh(geo, mat);
+            transformerGroup.add(coreMesh);
+
+            // Đường viền cạnh sắc nét giúp định hình lõi sắt rõ ràng
+            const edges = new THREE.EdgesGeometry(geo, 22);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.45 });
+            const wireframe = new THREE.LineSegments(edges, lineMat);
+            transformerGroup.add(wireframe);
+        }
+
+        buildIronCore();
+
+        // ==========================================
+        // 4. DỰNG CUỘN DÂY ĐỒNG (SƠ CẤP & THỨ CẤP) + DÂY DẪN
+        // ==========================================
+        const coilsGroup = new THREE.Group();
+        transformerGroup.add(coilsGroup);
+
+        let primaryElectronCurve = null;
+        let secondaryElectronCurve = null;
+        let switchBladeMesh = null;
+
+        // Vật liệu đồng sáng bóng
+        const primaryCopperMat = new THREE.MeshStandardMaterial({
+            color: 0xf97316,
+            metalness: 0.78,
+            roughness: 0.22,
+            emissive: 0x7c2d12,
+            emissiveIntensity: 0.25
+        });
+
+        const secondaryCopperMat = new THREE.MeshStandardMaterial({
+            color: 0x14b8a6,
+            metalness: 0.78,
+            roughness: 0.22,
+            emissive: 0x115e59,
+            emissiveIntensity: 0.25
+        });
+
+        const wireLeadMat = new THREE.MeshStandardMaterial({
+            color: 0xd97706,
+            metalness: 0.7,
+            roughness: 0.3
+        });
+
+        function buildCoilsAndLeads() {
+            // Xóa cuộn dây cũ trước khi vẽ lại khi đổi số vòng N1, N2
+            while (coilsGroup.children.length > 0) {
+                const obj = coilsGroup.children[0];
+                if (obj.geometry) obj.geometry.dispose();
+                coilsGroup.remove(obj);
+            }
+
+            const coilSpanY = 2.35; // Chiều cao vùng quấn dây trên trụ đứng
+            const rx = coreThick / 2 + 0.14;
+            const rz = coreDepth / 2 + 0.14;
+
+            // --- A. CUỘN SƠ CẤP (TRỤ TRÁI x = -coreW/2) ---
+            const xLeft = -coreW / 2;
+            const primaryPoints = [];
+
+            // Dây dẫn từ nguồn bên trái đi vào cực trên của cuộn sơ cấp (có công tắc cầu dao)
+            primaryPoints.push(new THREE.Vector3(-4.6, 1.35, 0));
+            primaryPoints.push(new THREE.Vector3(-3.85, 1.35, 0)); // Điểm bản lề công tắc
+            primaryPoints.push(new THREE.Vector3(-3.15, 1.35, 0)); // Điểm tiếp xúc công tắc
+            primaryPoints.push(new THREE.Vector3(xLeft, coilSpanY / 2 + 0.15, rz));
+
+            const stepsP = state.n1 * 24;
+            for (let i = 0; i <= stepsP; i++) {
+                const t = i / stepsP;
+                const angle = t * state.n1 * Math.PI * 2;
+                const y = (coilSpanY / 2) - t * coilSpanY;
+                const x = xLeft + Math.sin(angle) * rx;
+                const z = Math.cos(angle) * rz;
+                primaryPoints.push(new THREE.Vector3(x, y, z));
+            }
+
+            // Dây dẫn từ cực dưới cuộn sơ cấp quay về nguồn
+            primaryPoints.push(new THREE.Vector3(xLeft, -coilSpanY / 2 - 0.15, rz));
+            primaryPoints.push(new THREE.Vector3(-3.15, -1.35, 0));
+            primaryPoints.push(new THREE.Vector3(-4.6, -1.35, 0));
+
+            primaryElectronCurve = new THREE.CatmullRomCurve3(primaryPoints);
+            const primaryGeo = new THREE.TubeGeometry(primaryElectronCurve, Math.max(180, state.n1 * 18), 0.052, 10, false);
+            const primaryMesh = new THREE.Mesh(primaryGeo, primaryCopperMat);
+            coilsGroup.add(primaryMesh);
+
+            // Cọc nguồn AC/DC bên trái
+            const terminalGeo = new THREE.SphereGeometry(0.11, 16, 16);
+            const termMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.8, roughness: 0.2 });
+            const tTop = new THREE.Mesh(terminalGeo, termMat);
+            tTop.position.set(-4.6, 1.35, 0);
+            const tBot = new THREE.Mesh(terminalGeo, termMat);
+            tBot.position.set(-4.6, -1.35, 0);
+            coilsGroup.add(tTop, tBot);
+
+            // Cầu dao công tắc 3D trực quan trên dây dẫn sơ cấp
+            const hinge = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.16, 12), termMat);
+            hinge.rotation.x = Math.PI / 2;
+            hinge.position.set(-3.85, 1.35, 0);
+            coilsGroup.add(hinge);
+
+            const contact = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.16, 12), termMat);
+            contact.rotation.x = Math.PI / 2;
+            contact.position.set(-3.15, 1.35, 0);
+            coilsGroup.add(contact);
+
+            const bladeGeo = new THREE.BoxGeometry(0.75, 0.07, 0.09);
+            bladeGeo.translate(0.35, 0, 0);
+            const bladeMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0284c7, emissiveIntensity: 0.5 });
+            switchBladeMesh = new THREE.Mesh(bladeGeo, bladeMat);
+            switchBladeMesh.position.set(-3.85, 1.38, 0);
+            switchBladeMesh.rotation.z = state.powerOn ? 0 : 0.55;
+            coilsGroup.add(switchBladeMesh);
+
+            // --- B. CUỘN THỨ CẤP (TRỤ PHẢI x = +coreW/2) ---
+            const xRight = coreW / 2;
+            const secondaryPoints = [];
+
+            // Hai đầu dây ra bên phải như trong video
+            secondaryPoints.push(new THREE.Vector3(4.3, 1.25, 0));
+            secondaryPoints.push(new THREE.Vector3(xRight, coilSpanY / 2 + 0.15, rz));
+
+            const stepsS = state.n2 * 24;
+            for (let i = 0; i <= stepsS; i++) {
+                const t = i / stepsS;
+                const angle = t * state.n2 * Math.PI * 2;
+                const y = (coilSpanY / 2) - t * coilSpanY;
+                const x = xRight - Math.sin(angle) * rx;
+                const z = Math.cos(angle) * rz;
+                secondaryPoints.push(new THREE.Vector3(x, y, z));
+            }
+
+            secondaryPoints.push(new THREE.Vector3(xRight, -coilSpanY / 2 - 0.15, rz));
+            secondaryPoints.push(new THREE.Vector3(4.3, -1.25, 0));
+
+            secondaryElectronCurve = new THREE.CatmullRomCurve3(secondaryPoints);
+            const secondaryGeo = new THREE.TubeGeometry(secondaryElectronCurve, Math.max(180, state.n2 * 18), 0.048, 10, false);
+            const secondaryMesh = new THREE.Mesh(secondaryGeo, secondaryCopperMat);
+            coilsGroup.add(secondaryMesh);
+
+            // Hai đầu cực đầu ra cuộn thứ cấp
+            const outTop = new THREE.Mesh(terminalGeo, termMat);
+            outTop.position.set(4.3, 1.25, 0);
+            const outBot = new THREE.Mesh(terminalGeo, termMat);
+            outBot.position.set(4.3, -1.25, 0);
+            coilsGroup.add(outTop, outBot);
+        }
+
+        buildCoilsAndLeads();
+
+        // ==========================================
+        // 5. ĐƯỜNG SỨC TỪ THÔNG TRONG LÕI SẮT (Φ)
+        // ==========================================
+        const fluxGroup = new THREE.Group();
+        transformerGroup.add(fluxGroup);
+
+        const fluxLoops = [
+            { w: coreW - 0.24, h: coreH - 0.24, r: 0.28 },
+            { w: coreW, h: coreH, r: 0.35 },
+            { w: coreW + 0.24, h: coreH + 0.24, r: 0.42 }
+        ];
+
+        const fluxArrows = [];
+        const fluxLineMaterials = [];
+
+        fluxLoops.forEach((loopCfg) => {
+            const curve = createRoundedRectPath(loopCfg.w, loopCfg.h, loopCfg.r);
+            const pts = curve.getPoints(120);
+            const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+            const lineMat = new THREE.LineBasicMaterial({
+                color: 0x38bdf8,
+                transparent: true,
+                opacity: 0.55
+            });
+            fluxLineMaterials.push(lineMat);
+            const line = new THREE.Line(lineGeo, lineMat);
+            fluxGroup.add(line);
+
+            // Các mũi tên nón chạy dọc theo đường sức từ
+            const arrowCount = 12;
+            const coneGeo = new THREE.ConeGeometry(0.085, 0.24, 10);
+            coneGeo.rotateX(Math.PI / 2); // Hướng theo trục +Z để dùng lookAt()
+
+            for (let i = 0; i < arrowCount; i++) {
+                const arrowMat = new THREE.MeshBasicMaterial({
+                    color: 0x60a5fa,
+                    transparent: true,
+                    opacity: 0.9
+                });
+                const arrowMesh = new THREE.Mesh(coneGeo, arrowMat);
+                fluxGroup.add(arrowMesh);
+                fluxArrows.push({
+                    mesh: arrowMesh,
+                    curve: curve,
+                    offset: i / arrowCount
+                });
+            }
+        });
+
+        // ==========================================
+        // 6. ĐIỆN TRƯỜNG XOÁY XUNG QUANH CUỘN DÂY
+        // ==========================================
+        const eFieldGroup = new THREE.Group();
+        transformerGroup.add(eFieldGroup);
+
+        const eFieldRings = [];
+        const ringPositions = [
+            { x: -coreW / 2, y: 0.85, baseR: 1.05 },
+            { x: -coreW / 2, y: 0, baseR: 1.2 },
+            { x: -coreW / 2, y: -0.85, baseR: 1.05 },
+            { x: coreW / 2, y: 0.85, baseR: 1.05 },
+            { x: coreW / 2, y: 0, baseR: 1.2 },
+            { x: coreW / 2, y: -0.85, baseR: 1.05 }
+        ];
+
+        ringPositions.forEach((cfg) => {
+            const ringHolder = new THREE.Group();
+            ringHolder.position.set(cfg.x, cfg.y, 0);
+
+            const torusGeo = new THREE.TorusGeometry(cfg.baseR, 0.015, 8, 48);
+            torusGeo.rotateX(Math.PI / 2);
+            const torusMat = new THREE.MeshBasicMaterial({
+                color: 0xe879f9,
+                transparent: true,
+                opacity: 0.45
+            });
+            const torus = new THREE.Mesh(torusGeo, torusMat);
+            ringHolder.add(torus);
+
+            // 4 mũi tên nhỏ xoay quanh vòng điện trường xoáy
+            const subArrows = [];
+            const arrowGeo = new THREE.ConeGeometry(0.055, 0.16, 8);
+            for (let k = 0; k < 4; k++) {
+                const aMat = new THREE.MeshBasicMaterial({ color: 0xf0abfc, transparent: true, opacity: 0.85 });
+                const aMesh = new THREE.Mesh(arrowGeo, aMat);
+                const theta = (k / 4) * Math.PI * 2;
+                aMesh.position.set(Math.cos(theta) * cfg.baseR, 0, Math.sin(theta) * cfg.baseR);
+                aMesh.rotation.x = Math.PI / 2;
+                aMesh.rotation.z = -theta;
+                ringHolder.add(aMesh);
+                subArrows.push({ mesh: aMesh, theta: theta, radius: cfg.baseR });
+            }
+
+            eFieldGroup.add(ringHolder);
+            eFieldRings.push({ holder: ringHolder, torusMat, subArrows, baseR: cfg.baseR });
+        });
+
+        // ==========================================
+        // 7. HẠT DÒNG ĐIỆN (ELECTRON) TRONG DÂY DẪN
+        // ==========================================
+        const electronsGroup = new THREE.Group();
+        transformerGroup.add(electronsGroup);
+
+        const primaryParticles = [];
+        const secondaryParticles = [];
+        const pCount = 48;
+        const sCount = 48;
+
+        const eGeo = new THREE.SphereGeometry(0.068, 10, 10);
+        const pMat = new THREE.MeshBasicMaterial({ color: 0xfde047 });
+        const sMat = new THREE.MeshBasicMaterial({ color: 0x5eead4 });
+
+        for (let i = 0; i < pCount; i++) {
+            const m = new THREE.Mesh(eGeo, pMat);
+            electronsGroup.add(m);
+            primaryParticles.push({ mesh: m, u: i / pCount });
+        }
+
+        for (let i = 0; i < sCount; i++) {
+            const m = new THREE.Mesh(eGeo, sMat);
+            electronsGroup.add(m);
+            secondaryParticles.push({ mesh: m, u: i / sCount });
+        }
+
+        // ==========================================
+        // 8. CẬP NHẬT NHÃN 3D NỔI (PROJECTION)
+        // ==========================================
+        const labelMap = [
+            { el: document.getElementById('lbl-core'), pos: new THREE.Vector3(0, 2.25, 0) },
+            { el: document.getElementById('lbl-primary'), pos: new THREE.Vector3(-coreW / 2, -2.35, 0) },
+            { el: document.getElementById('lbl-secondary'), pos: new THREE.Vector3(coreW / 2, -2.35, 0) },
+            { el: document.getElementById('lbl-flux'), pos: new THREE.Vector3(0, -1.8, 0.5) },
+            { el: document.getElementById('lbl-u2-out'), pos: new THREE.Vector3(4.3, 1.75, 0) }
+        ];
+
+        function update3DLabels() {
+            const containerEl = document.getElementById('labels-container');
+            if (!state.showLabels) {
+                containerEl.style.display = 'none';
+                return;
+            }
+            containerEl.style.display = 'block';
+
+            const tempV = new THREE.Vector3();
+            labelMap.forEach(item => {
+                tempV.copy(item.pos);
+                tempV.project(camera);
+
+                // Ẩn nếu nằm phía sau camera
+                if (tempV.z > 1) {
+                    item.el.style.opacity = '0';
+                    return;
+                }
+
+                const x = (tempV.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (-(tempV.y * 0.5) + 0.5) * window.innerHeight;
+                item.el.style.left = `${x}px`;
+                item.el.style.top = `${y}px`;
+                item.el.style.opacity = '1';
+            });
+        }
+
+        // ==========================================
+        // 9. DAO ĐỘNG KÝ THỜI GIAN THỰC (OSCILLOSCOPE)
+        // ==========================================
+        const oscCanvas = document.getElementById('oscilloscope-canvas');
+        const oscCtx = oscCanvas.getContext('2d');
+
+        function drawOscilloscope() {
+            const rect = oscCanvas.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            const w = Math.max(10, Math.floor(rect.width * dpr));
+            const h = Math.max(10, Math.floor(rect.height * dpr));
+
+            if (oscCanvas.width !== w || oscCanvas.height !== h) {
+                oscCanvas.width = w;
+                oscCanvas.height = h;
+            }
+
+            oscCtx.clearRect(0, 0, w, h);
+
+            // Lưới nền dao động ký
+            oscCtx.strokeStyle = 'rgba(148, 163, 184, 0.12)';
+            oscCtx.lineWidth = 1;
+            const stepX = w / 8;
+            const stepY = h / 4;
+            for (let x = stepX; x < w; x += stepX) {
+                oscCtx.beginPath();
+                oscCtx.moveTo(x, 0);
+                oscCtx.lineTo(x, h);
+                oscCtx.stroke();
+            }
+            for (let y = stepY; y < h; y += stepY) {
+                oscCtx.beginPath();
+                oscCtx.moveTo(0, y);
+                oscCtx.lineTo(w, y);
+                oscCtx.stroke();
+            }
+
+            // Trục 0V ở giữa
+            oscCtx.strokeStyle = 'rgba(148, 163, 184, 0.35)';
+            oscCtx.beginPath();
+            oscCtx.moveTo(0, h / 2);
+            oscCtx.lineTo(w, h / 2);
+            oscCtx.stroke();
+
+            // Thang đo biên độ tối đa (480V)
+            const maxScaleV = 480;
+            const midY = h / 2;
+            const ampScale = (h * 0.44) / maxScaleV;
+
+            // Vẽ sóng U1(t) - Màu cam
+            oscCtx.strokeStyle = '#fb923c';
+            oscCtx.lineWidth = 2 * dpr;
+            oscCtx.beginPath();
+            for (let i = 0; i < state.waveHistoryU1.length; i++) {
+                const px = (i / (state.waveHistoryU1.length - 1)) * w;
+                const py = midY - state.waveHistoryU1[i] * ampScale;
+                if (i === 0) oscCtx.moveTo(px, py);
+                else oscCtx.lineTo(px, py);
+            }
+            oscCtx.stroke();
+
+            // Vẽ sóng U2(t) - Màu xanh ngọc
+            oscCtx.strokeStyle = '#2dd4bf';
+            oscCtx.lineWidth = 2 * dpr;
+            oscCtx.beginPath();
+            for (let i = 0; i < state.waveHistoryU2.length; i++) {
+                const px = (i / (state.waveHistoryU2.length - 1)) * w;
+                const py = midY - state.waveHistoryU2[i] * ampScale;
+                if (i === 0) oscCtx.moveTo(px, py);
+                else oscCtx.lineTo(px, py);
+            }
+            oscCtx.stroke();
+        }
+
+        // ==========================================
+        // 10. VÒNG LẶP VẬT LÝ & ANIMATION CHÍNH
+        // ==========================================
+        function animate(now = performance.now()) {
+            requestAnimationFrame(animate);
+
+            const dt = Math.min((now - state.lastTime) / 1000, 0.05);
+            state.lastTime = now;
+
+            controls.update();
+
+            // Cập nhật góc đóng/mở cầu dao 3D mượt mà
+            if (switchBladeMesh) {
+                const targetAngle = state.powerOn ? 0 : 0.58;
+                switchBladeMesh.rotation.z += (targetAngle - switchBladeMesh.rotation.z) * 0.2;
+            }
+
+            // Tính toán các đại lượng vật lý
+            const ratio = state.n2 / state.n1;
+            let instU1 = 0;
+            let instU2 = 0;
+            let fluxNorm = 0;     // Giá trị từ thông chuẩn hóa [-1, 1]
+            let dFluxDt = 0;      // Tốc độ biến thiên từ thông -> quyết định điện áp cảm ứng U2 & điện trường xoáy
+
+            if (state.mode === 'AC') {
+                if (state.powerOn) {
+                    state.phase += dt * state.freq * Math.PI * 2;
+                    const u1Factor = state.u1 / 240;
+                    instU1 = state.u1 * Math.sin(state.phase);
+                    fluxNorm = u1Factor * Math.sin(state.phase);
+                    // Suất điện động cảm ứng tỷ lệ với đạo hàm của từ thông: cos(phase)
+                    dFluxDt = u1Factor * Math.cos(state.phase) * (state.freq / 0.8);
+                    instU2 = (state.u1 * ratio) * Math.cos(state.phase);
+                } else {
+                    // Khi ngắt mạch, từ thông suy giảm nhanh về 0
+                    state.dcFluxLevel *= Math.pow(0.05, dt);
+                    fluxNorm = state.dcFluxLevel;
+                    dFluxDt = 0;
+                }
+            } else {
+                // Chế độ Dòng một chiều (DC)
+                const targetDcFlux = state.powerOn ? (state.u1 / 240) : 0;
+                const prevFlux = state.dcFluxLevel;
+                // Quá độ tăng/giảm từ thông trong khoảng 0.25s khi vừa đóng/ngắt công tắc
+                state.dcFluxLevel += (targetDcFlux - state.dcFluxLevel) * Math.min(1, dt * 8);
+                fluxNorm = state.dcFluxLevel;
+
+                instU1 = state.powerOn ? state.u1 : 0;
+                // Chỉ xuất hiện điện áp cảm ứng thoáng qua lúc từ thông đang thay đổi!
+                const transientRate = (state.dcFluxLevel - prevFlux) / Math.max(dt, 0.001);
+                dFluxDt = Math.max(-1.5, Math.min(1.5, transientRate * 0.35));
+                instU2 = dFluxDt * 240 * ratio;
+            }
+
+            // Lưu lịch sử sóng cho dao động ký
+            state.waveHistoryU1.push(instU1);
+            state.waveHistoryU1.shift();
+            state.waveHistoryU2.push(instU2);
+            state.waveHistoryU2.shift();
+
+            // Cập nhật hiển thị thông số kỹ thuật trên bảng phải
+            const effectiveU2 = (state.powerOn && state.mode === 'AC') ? Math.round(state.u1 * ratio) : 0;
+            document.getElementById('readout-u1').textContent = state.powerOn ? state.u1 : 0;
+            document.getElementById('readout-u2').textContent = effectiveU2;
+            document.getElementById('lbl-u2-val').textContent = effectiveU2;
+            document.getElementById('inst-u1').textContent = Math.round(instU1);
+            document.getElementById('inst-u2').textContent = Math.round(instU2);
+
+            const fluxPercent = Math.round(Math.abs(fluxNorm) * 100);
+            document.getElementById('readout-flux').textContent = fluxPercent;
+
+            const fluxDirEl = document.getElementById('flux-dir-text');
+            if (!state.powerOn || state.u1 === 0) {
+                fluxDirEl.textContent = 'Không có từ thông';
+            } else if (state.mode === 'DC' && Math.abs(dFluxDt) < 0.02) {
+                fluxDirEl.textContent = 'Không đổi (U₂ = 0)';
+            } else {
+                fluxDirEl.textContent = fluxNorm >= 0 ? 'Chiều thuận (+)' : 'Chiều ngược (-)';
+            }
+
+            // --- Cập nhật hiệu ứng Từ thông trong lõi sắt ---
+            fluxGroup.visible = state.showFlux && Math.abs(fluxNorm) > 0.015;
+            if (fluxGroup.visible) {
+                const absFlux = Math.abs(fluxNorm);
+                const isPositive = fluxNorm >= 0;
+                const fluxColor = isPositive ? 0x38bdf8 : 0x818cf8;
+
+                fluxLineMaterials.forEach(mat => {
+                    mat.color.setHex(fluxColor);
+                    mat.opacity = 0.25 + absFlux * 0.65;
+                });
+
+                const speed = (state.mode === 'AC' ? state.freq * 0.45 : 0.25) * (isPositive ? 1 : -1);
+                fluxArrows.forEach(item => {
+                    item.offset = (item.offset + dt * speed + 1) % 1;
+                    const pt = item.curve.getPointAt(item.offset);
+                    const tangent = item.curve.getTangentAt(item.offset);
+                    if (!isPositive) tangent.negate();
+
+                    item.mesh.position.copy(pt);
+                    item.mesh.lookAt(pt.clone().add(tangent));
+                    item.mesh.material.color.setHex(fluxColor);
+                    item.mesh.material.opacity = 0.35 + absFlux * 0.65;
+                    const s = 0.6 + absFlux * 0.65;
+                    item.mesh.scale.set(s, s, s);
+                });
+            }
+
+            // --- Cập nhật hiệu ứng Điện trường xoáy ---
+            const absE = Math.abs(dFluxDt);
+            eFieldGroup.visible = state.showEField && absE > 0.03;
+            if (eFieldGroup.visible) {
+                const eDir = dFluxDt >= 0 ? 1 : -1;
+                eFieldRings.forEach(ring => {
+                    const scalePulse = 0.88 + Math.min(absE, 1.3) * 0.28;
+                    ring.holder.scale.set(scalePulse, 1, scalePulse);
+                    ring.torusMat.opacity = Math.min(0.85, 0.2 + absE * 0.55);
+
+                    ring.subArrows.forEach(arr => {
+                        arr.theta += dt * 2.2 * eDir * Math.min(absE, 1.5);
+                        arr.mesh.position.set(
+                            Math.cos(arr.theta) * ring.baseR,
+                            0,
+                            Math.sin(arr.theta) * ring.baseR
+                        );
+                        arr.mesh.rotation.z = -arr.theta + (eDir > 0 ? 0 : Math.PI);
+                        arr.mesh.material.opacity = Math.min(0.95, 0.3 + absE * 0.65);
+                    });
+                });
+            }
+
+            // --- Cập nhật Hạt dòng điện trong dây dẫn ---
+            electronsGroup.visible = state.showElectrons;
+            if (state.showElectrons && primaryElectronCurve && secondaryElectronCurve) {
+                // Hạt ở cuộn sơ cấp
+                const pVel = (instU1 / 240) * 0.55;
+                primaryParticles.forEach(p => {
+                    p.mesh.visible = state.powerOn && state.u1 > 0;
+                    if (p.mesh.visible) {
+                        p.u = (p.u + dt * pVel + 1) % 1;
+                        const pos = primaryElectronCurve.getPointAt(p.u);
+                        p.mesh.position.copy(pos);
+                    }
+                });
+
+                // Hạt ở cuộn thứ cấp (chỉ chạy khi có suất điện động cảm ứng)
+                const sVel = (dFluxDt) * 0.55;
+                secondaryParticles.forEach(s => {
+                    s.mesh.visible = Math.abs(dFluxDt) > 0.025 && state.u1 > 0;
+                    if (s.mesh.visible) {
+                        s.u = (s.u - dt * sVel + 1) % 1;
+                        const pos = secondaryElectronCurve.getPointAt(s.u);
+                        s.mesh.position.copy(pos);
+                    }
+                });
+            }
+
+            drawOscilloscope();
+            update3DLabels();
+            renderer.render(scene, camera);
+        }
+
+        // ==========================================
+        // 11. SỰ KIỆN ĐIỀU KHIỂN GIAO DIỆN (UI EVENTS)
+        // ==========================================
+        function updateTransformerClassification() {
+            const ratio = state.n2 / state.n1;
+            document.getElementById('ratio-val').textContent = ratio.toFixed(2);
+            document.getElementById('lbl-n1').textContent = state.n1;
+            document.getElementById('lbl-n2').textContent = state.n2;
+
+            const badge = document.getElementById('transformer-mode-badge');
+            if (state.n2 > state.n1) {
+                badge.textContent = 'Máy tăng áp (N₂ > N₁)';
+                badge.className = 'px-2.5 py-1 text-[11px] font-bold bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/30';
+            } else if (state.n2 < state.n1) {
+                badge.textContent = 'Máy hạ áp (N₂ < N₁)';
+                badge.className = 'px-2.5 py-1 text-[11px] font-bold bg-sky-500/20 text-sky-300 rounded-full border border-sky-500/30';
+            } else {
+                badge.textContent = 'Biến áp cách ly (N₂ = N₁)';
+                badge.className = 'px-2.5 py-1 text-[11px] font-bold bg-slate-500/20 text-slate-300 rounded-full border border-slate-500/30';
+            }
+        }
+
+        function updateAlertBanner() {
+            const alertBox = document.getElementById('physics-alert');
+            if (!state.powerOn) {
+                alertBox.classList.remove('hidden');
+                alertBox.innerHTML = '<strong>Mạch đang ngắt:</strong> Không có dòng điện đi qua cuộn sơ cấp nên từ thông bằng 0.';
+            } else if (state.mode === 'DC') {
+                alertBox.classList.remove('hidden');
+                alertBox.innerHTML = '<strong>Lưu ý dòng một chiều (DC):</strong> Từ thông trong lõi không biến thiên liên tục nên điện áp đầu ra <strong>U₂ = 0 V</strong> (chỉ xuất hiện xung thoáng qua lúc đóng/ngắt công tắc).';
+            } else {
+                alertBox.classList.add('hidden');
+            }
+        }
+
+        // Nút Công tắc Bật / Tắt nguồn
+        const btnPower = document.getElementById('btn-power-switch');
+        btnPower.addEventListener('click', () => {
+            state.powerOn = !state.powerOn;
+            const textEl = document.getElementById('power-text');
+            const indEl = document.getElementById('power-indicator');
+            const tagEl = btnPower.querySelector('span:last-child');
+
+            if (state.powerOn) {
+                btnPower.className = 'w-full py-2.5 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-between transition-all cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/40 border border-emerald-400/40';
+                textEl.textContent = 'MẠCH ĐANG ĐÓNG (CÓ ĐIỆN)';
+                indEl.className = 'w-2.5 h-2.5 rounded-full bg-white shadow-[0_0_8px_#fff]';
+                tagEl.textContent = 'ON';
+            } else {
+                btnPower.className = 'w-full py-2.5 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-between transition-all cursor-pointer bg-rose-600/90 hover:bg-rose-500 text-white shadow-lg shadow-rose-900/40 border border-rose-400/40';
+                textEl.textContent = 'MẠCH ĐANG NGẮT (MẤT ĐIỆN)';
+                indEl.className = 'w-2.5 h-2.5 rounded-full bg-rose-200';
+                tagEl.textContent = 'OFF';
+            }
+            updateAlertBanner();
+        });
+
+        // Chuyển đổi AC / DC
+        const btnAc = document.getElementById('btn-mode-ac');
+        const btnDc = document.getElementById('btn-mode-dc');
+        const freqGroup = document.getElementById('freq-control-group');
+
+        btnAc.addEventListener('click', () => {
+            state.mode = 'AC';
+            btnAc.className = 'py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-sky-600 text-white shadow';
+            btnDc.className = 'py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-slate-400 hover:text-white';
+            freqGroup.classList.remove('opacity-40', 'pointer-events-none');
+            updateAlertBanner();
+        });
+
+        btnDc.addEventListener('click', () => {
+            state.mode = 'DC';
+            state.dcFluxLevel = 0; // Tạo hiệu ứng xung quá độ ngay khi chuyển sang DC
+            btnDc.className = 'py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer bg-amber-600 text-white shadow';
+            btnAc.className = 'py-1.5 px-2 rounded-lg text-xs font-semibold transition cursor-pointer text-slate-400 hover:text-white';
+            freqGroup.classList.add('opacity-40', 'pointer-events-none');
+            updateAlertBanner();
+        });
+
+        // Các thanh trượt thông số
+        document.getElementById('slider-u1').addEventListener('input', (e) => {
+            state.u1 = Number(e.target.value);
+            document.getElementById('val-u1').textContent = state.u1;
+        });
+
+        document.getElementById('slider-freq').addEventListener('input', (e) => {
+            state.freq = Number(e.target.value);
+            document.getElementById('val-freq').textContent = state.freq.toFixed(1);
+        });
+
+        document.getElementById('slider-n1').addEventListener('input', (e) => {
+            state.n1 = Number(e.target.value);
+            document.getElementById('val-n1').textContent = state.n1;
+            buildCoilsAndLeads();
+            updateTransformerClassification();
+        });
+
+        document.getElementById('slider-n2').addEventListener('input', (e) => {
+            state.n2 = Number(e.target.value);
+            document.getElementById('val-n2').textContent = state.n2;
+            buildCoilsAndLeads();
+            updateTransformerClassification();
+        });
+
+        // Checkbox lớp hiệu ứng
+        document.getElementById('chk-flux').addEventListener('change', (e) => state.showFlux = e.target.checked);
+        document.getElementById('chk-efield').addEventListener('change', (e) => state.showEField = e.target.checked);
+        document.getElementById('chk-electrons').addEventListener('change', (e) => state.showElectrons = e.target.checked);
+        document.getElementById('chk-labels').addEventListener('change', (e) => state.showLabels = e.target.checked);
+
+        // Nút đặt lại góc nhìn 360 độ
+        document.getElementById('btn-reset-cam').addEventListener('click', () => {
+            camera.position.copy(defaultCamPos);
+            controls.target.set(0, 0, 0);
+            controls.update();
+        });
+
+        // ==========================================
+        // 12. QUẢN LÝ THU GỌN & PHÓNG TO / THU NHỎ BẢNG UI
+        // ==========================================
+        const uiPanelsState = {
+            allHidden: false,
+            left: {
+                scale: 1.0,
+                collapsed: false,
+                wrapper: document.getElementById('left-panel-wrapper'),
+                body: document.getElementById('left-panel-body'),
+                label: document.getElementById('left-zoom-label'),
+                icon: document.getElementById('left-collapse-icon')
+            },
+            right: {
+                scale: 1.0,
+                collapsed: false,
+                wrapper: document.getElementById('right-panel-wrapper'),
+                body: document.getElementById('right-panel-body'),
+                label: document.getElementById('right-zoom-label'),
+                icon: document.getElementById('right-collapse-icon')
+            }
+        };
+
+        function applyPanelTransform(side) {
+            const p = uiPanelsState[side];
+            const isMobile = window.innerWidth < 640;
+            if (side === 'right') {
+                p.wrapper.style.transformOrigin = isMobile ? 'bottom right' : 'top right';
+            } else {
+                p.wrapper.style.transformOrigin = 'top left';
+            }
+            p.wrapper.style.transform = `scale(${p.scale})`;
+            p.label.textContent = `${Math.round(p.scale * 100)}%`;
+        }
+
+        function changePanelScale(side, delta) {
+            const p = uiPanelsState[side];
+            p.scale = Math.min(1.15, Math.max(0.75, Math.round((p.scale + delta) * 100) / 100));
+            applyPanelTransform(side);
+        }
+
+        function togglePanelCollapse(side, forceState = null) {
+            const p = uiPanelsState[side];
+            p.collapsed = forceState !== null ? forceState : !p.collapsed;
+            if (p.collapsed) {
+                p.body.classList.add('hidden');
+                p.icon.style.transform = 'rotate(-90deg)';
+            } else {
+                p.body.classList.remove('hidden');
+                p.icon.style.transform = 'rotate(0deg)';
+            }
+        }
+
+        // Gắn sự kiện cho Bảng Trái
+        document.getElementById('left-zoom-out').addEventListener('click', () => changePanelScale('left', -0.05));
+        document.getElementById('left-zoom-in').addEventListener('click', () => changePanelScale('left', 0.05));
+        document.getElementById('left-collapse-btn').addEventListener('click', () => togglePanelCollapse('left'));
+
+        // Gắn sự kiện cho Bảng Phải
+        document.getElementById('right-zoom-out').addEventListener('click', () => changePanelScale('right', -0.05));
+        document.getElementById('right-zoom-in').addEventListener('click', () => changePanelScale('right', 0.05));
+        document.getElementById('right-collapse-btn').addEventListener('click', () => togglePanelCollapse('right'));
+
+        // Nút Ẩn / Hiện toàn bộ bảng UI
+        const btnToggleAllUI = document.getElementById('btn-toggle-all-ui');
+        btnToggleAllUI.addEventListener('click', () => {
+            uiPanelsState.allHidden = !uiPanelsState.allHidden;
+            const wrappers = document.querySelectorAll('.ui-panel-wrapper');
+            const eyeOpen = document.getElementById('icon-eye-open');
+            const eyeClosed = document.getElementById('icon-eye-closed');
+            const txt = document.getElementById('txt-toggle-all-ui');
+
+            wrappers.forEach(w => {
+                if (uiPanelsState.allHidden) {
+                    w.classList.add('hidden');
+                } else {
+                    w.classList.remove('hidden');
+                }
+            });
+
+            if (uiPanelsState.allHidden) {
+                eyeOpen.classList.add('hidden');
+                eyeClosed.classList.remove('hidden');
+                txt.textContent = 'Hiện bảng UI';
+            } else {
+                eyeOpen.classList.remove('hidden');
+                eyeClosed.classList.add('hidden');
+                txt.textContent = 'Ẩn bảng UI';
+            }
+        });
+
+        // Tự động điều chỉnh kích thước mặc định khi mở trên màn hình nhỏ
+        function initResponsivePanels() {
+            if (window.innerWidth < 768) {
+                uiPanelsState.left.scale = 0.85;
+                uiPanelsState.right.scale = 0.85;
+                // Trên màn hình điện thoại rất hẹp, tự động thu gọn bảng điều khiển trái để không che lõi máy biến áp
+                if (window.innerWidth < 640) {
+                    togglePanelCollapse('left', true);
+                }
+            }
+            applyPanelTransform('left');
+            applyPanelTransform('right');
+        }
+
+        // Xử lý thay đổi kích thước cửa sổ
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            applyPanelTransform('left');
+            applyPanelTransform('right');
+        });
+
+        // Khởi chạy ứng dụng khi tải xong
+        window.onload = function() {
+            initResponsivePanels();
+            updateTransformerClassification();
+            updateAlertBanner();
+            animate();
+        };
+    </script>
+</body>
+</html>
